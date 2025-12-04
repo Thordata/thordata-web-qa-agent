@@ -8,6 +8,8 @@ Usage (offline mode, using cached docs in data/web_qa_sample.json):
     python web_qa_agent.py --question "..." --offline
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -18,28 +20,31 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
-from thordata import ThordataClient, Engine
+from thordata import (
+    ThordataClient,
+    Engine,
+    ThordataRateLimitError,
+    ThordataAuthError,
+    ThordataAPIError,
+)
 
 # Optional: OpenAI for LLM summarization
 try:
-    from openai import OpenAI
+    from openai import OpenAI, RateLimitError  # type: ignore
 except ImportError:
     OpenAI = None  # handled later
-
+    RateLimitError = Exception  # type: ignore
 
 # -----------------------------
 # Path & environment setup
 # -----------------------------
 
-# Assume this script lives at the project root
 ROOT_DIR = Path(__file__).resolve().parent
 ENV_PATH = ROOT_DIR / ".env"
 DATA_DIR = ROOT_DIR / "data"
 DOCS_CACHE_PATH = DATA_DIR / "web_qa_sample.json"
 
-# Load .env if present
 load_dotenv(ENV_PATH, override=True)
-
 
 # -----------------------------
 # Thordata client
@@ -61,10 +66,10 @@ td_client = ThordataClient(
     public_key=PUBLIC_KEY,
 )
 
-
 # -----------------------------
 # SERP + Universal helpers
 # -----------------------------
+
 
 def search_web_serp(
     query: str,
@@ -218,6 +223,10 @@ def get_docs_for_question(
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+# Global limits to keep LLM context under control
+MAX_CONTEXT_DOCS = 5
+MAX_CONTEXT_CHARS = 15_000
+
 
 def summarize_with_llm(
     question: str,
@@ -241,11 +250,17 @@ def summarize_with_llm(
             "OPENAI_API_KEY is missing. Please set it in your .env file to enable LLM calls."
         )
 
+    # Limit number of docs to avoid huge prompts
+    if len(docs) > MAX_CONTEXT_DOCS:
+        docs_for_context = docs[:MAX_CONTEXT_DOCS]
+    else:
+        docs_for_context = docs
+
     client = OpenAI(api_key=OPENAI_API_KEY)
 
     # Build context from docs
-    context_parts = []
-    for idx, doc in enumerate(docs, start=1):
+    context_parts: List[str] = []
+    for idx, doc in enumerate(docs_for_context, start=1):
         context_parts.append(
             f"[Source {idx}] {doc.get('title')}\n"
             f"URL: {doc.get('url')}\n"
@@ -253,6 +268,14 @@ def summarize_with_llm(
             f"Content:\n{doc.get('content')}\n"
         )
     context_text = "\n\n".join(context_parts)
+
+    # Global char limit for safety
+    if len(context_text) > MAX_CONTEXT_CHARS:
+        context_text = context_text[:MAX_CONTEXT_CHARS]
+        context_text += (
+            f"\n\n[Context truncated to first {MAX_CONTEXT_CHARS} characters "
+            "by web_qa_agent.py]"
+        )
 
     system_prompt = (
         "You are a helpful web research assistant. "
@@ -267,14 +290,21 @@ def summarize_with_llm(
         "with citations [1], [2], etc. Then list the sources with their URLs."
     )
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=0.3,
-    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+        )
+    except RateLimitError as e:
+        return (
+            "OpenAI returned 'insufficient_quota' for chat completions.\n"
+            "Please check your OpenAI plan/billing before running this agent again.\n"
+            f"Raw error: {e}"
+        )
 
     answer = response.choices[0].message.content
     return answer
@@ -283,6 +313,7 @@ def summarize_with_llm(
 # -----------------------------
 # CLI entrypoint
 # -----------------------------
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -315,13 +346,37 @@ def main() -> None:
 
     use_live = not args.offline
 
-    docs = get_docs_for_question(
-        question=args.question,
-        num_results=args.num_results,
-        engine=Engine.GOOGLE,
-        location=args.location,
-        use_live_thordata=use_live,
-    )
+    try:
+        docs = get_docs_for_question(
+            question=args.question,
+            num_results=args.num_results,
+            engine=Engine.GOOGLE,
+            location=args.location,
+            use_live_thordata=use_live,
+        )
+    except ThordataRateLimitError as e:
+        print(
+            "Thordata SERP/Universal API rate/quota issue (402/429).\n"
+            "Please check your Thordata plan/balance:"
+        )
+        print(f"  {e}")
+        return
+    except ThordataAuthError as e:
+        print("Thordata authentication/authorization error:")
+        print(f"  {e}")
+        return
+    except ThordataAPIError as e:
+        print("Thordata API returned an error while fetching docs:")
+        print(f"  {e}")
+        return
+    except FileNotFoundError as e:
+        # Offline mode but cache file missing
+        print(str(e))
+        return
+
+    if not docs:
+        print("No documents collected. Try a broader question or check Thordata logs.")
+        return
 
     # Show a small table of sources
     print()
