@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -21,11 +22,15 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
 from thordata import (
-    ThordataClient,
     Engine,
-    ThordataRateLimitError,
-    ThordataAuthError,
     ThordataAPIError,
+    ThordataAuthError,
+    ThordataClient,
+    ThordataConfigError,
+    ThordataNetworkError,
+    ThordataNotCollectedError,
+    ThordataRateLimitError,
+    ThordataTimeoutError,
 )
 
 # Optional: OpenAI for LLM summarization
@@ -50,21 +55,29 @@ load_dotenv(ENV_PATH, override=True)
 # Thordata client
 # -----------------------------
 
-SCRAPER_TOKEN = os.getenv("THORDATA_SCRAPER_TOKEN")
-PUBLIC_TOKEN = os.getenv("THORDATA_PUBLIC_TOKEN")
-PUBLIC_KEY = os.getenv("THORDATA_PUBLIC_KEY")
 
-if not SCRAPER_TOKEN:
-    raise RuntimeError(
-        "THORDATA_SCRAPER_TOKEN is missing. "
-        "Please configure your .env file at the project root."
+@lru_cache
+def get_thordata_client() -> ThordataClient:
+    """
+    Lazily create the Thordata client.
+
+    This avoids requiring credentials at import time (important for offline mode and tests).
+    """
+    scraper_token = os.getenv("THORDATA_SCRAPER_TOKEN")
+    public_token = os.getenv("THORDATA_PUBLIC_TOKEN")
+    public_key = os.getenv("THORDATA_PUBLIC_KEY")
+
+    if not scraper_token:
+        raise ThordataConfigError(
+            "THORDATA_SCRAPER_TOKEN is missing. Please configure your .env file."
+        )
+
+    return ThordataClient(
+        scraper_token=scraper_token,
+        public_token=public_token,
+        public_key=public_key,
     )
 
-td_client = ThordataClient(
-    scraper_token=SCRAPER_TOKEN,
-    public_token=PUBLIC_TOKEN,
-    public_key=PUBLIC_KEY,
-)
 
 # -----------------------------
 # SERP + Universal helpers
@@ -85,7 +98,8 @@ def search_web_serp(
         extra_params["location"] = location
 
     print(f"Searching {engine.value} for: {query!r}")
-    results = td_client.serp_search(
+    client = get_thordata_client()
+    results = client.serp_search(
         query=query,
         engine=engine,
         num=num_results,
@@ -150,10 +164,11 @@ def fetch_docs_from_web(
             continue
 
         print(f"\n[{idx}/{len(serp_results)}] Fetching via Universal API: {url}")
-        html = td_client.universal_scrape(
+        client = get_thordata_client()
+        html = client.universal_scrape(
             url=url,
             js_render=js_render,
-            output_format="HTML",
+            output_format="html",
         )
 
         if not html or len(html) < 200:
@@ -246,9 +261,7 @@ def summarize_with_llm(
         )
 
     if not OPENAI_API_KEY:
-        return (
-            "OPENAI_API_KEY is missing. Please set it in your .env file to enable LLM calls."
-        )
+        return "OPENAI_API_KEY is missing. Please set it in your .env file to enable LLM calls."
 
     # Limit number of docs to avoid huge prompts
     if len(docs) > MAX_CONTEXT_DOCS:
@@ -342,6 +355,11 @@ def main() -> None:
         action="store_true",
         help="Use cached docs from data/web_qa_sample.json instead of calling Thordata.",
     )
+    parser.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="Skip the OpenAI call and only print collected documents/sources.",
+    )
     args = parser.parse_args()
 
     use_live = not args.offline
@@ -373,9 +391,34 @@ def main() -> None:
         # Offline mode but cache file missing
         print(str(e))
         return
+    except ThordataNotCollectedError as e:
+        print(
+            "Thordata returned 'Not collected' (code=300). "
+            "Consider retrying or broadening the query."
+        )
+        print(f"  {e}")
+        return
+    except ThordataTimeoutError as e:
+        print("Thordata request timed out.")
+        print(f"  {e}")
+        return
+    except ThordataNetworkError as e:
+        print("Network error while calling Thordata.")
+        print(f"  {e}")
+        return
+    except ThordataConfigError as e:
+        print("Thordata configuration error:")
+        print(f"  {e}")
+        return
 
     if not docs:
         print("No documents collected. Try a broader question or check Thordata logs.")
+        return
+
+    if args.no_llm:
+        print("\nSkipping LLM. Collected documents:")
+        for i, d in enumerate(docs, start=1):
+            print(f"[{i}] {d.get('title')}\n    {d.get('url')}\n")
         return
 
     # Show a small table of sources

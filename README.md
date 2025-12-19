@@ -3,7 +3,7 @@
 A minimal **Web Question‑Answering Agent** built on top of:
 
 - Thordata **SERP API** (Google search)
-- Thordata **Universal Scraper API** (HTML scraping + JS rendering)
+- Thordata **Universal Scraper API** (html scraping + JS rendering)
 - **OpenAI** chat models for final answers
 
 The agent:
@@ -132,7 +132,7 @@ Internally, `web_qa_agent.py` is composed of:
 Thin wrapper around `ThordataClient.serp_search` (Google by default) that extracts `{title, link, snippet}`.
 
 ### `fetch_docs_from_web(...)`
-For each SERP result, calls `ThordataClient.universal_scrape` to fetch HTML, then cleans it into plain text using BeautifulSoup, truncating to a safe length per document.
+For each SERP result, calls `ThordataClient.universal_scrape` to fetch html, then cleans it into plain text using BeautifulSoup, truncating to a safe length per document.
 
 ### `get_docs_for_question(...)`
 Orchestrator that either:
