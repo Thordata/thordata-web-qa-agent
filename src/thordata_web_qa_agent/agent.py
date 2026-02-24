@@ -34,7 +34,7 @@ class Document:
         }
 
     @staticmethod
-    def from_dict(d: dict[str, Any]) -> "Document":
+    def from_dict(d: dict[str, Any]) -> Document:
         return Document(
             url=str(d.get("url") or ""),
             title=d.get("title"),
@@ -246,4 +246,3 @@ __all__ = [
     "default_cache_path",
     "load_local_env",
 ]
-

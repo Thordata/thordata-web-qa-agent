@@ -35,13 +35,17 @@ def test_web_qa_agent_runs_with_mocked_thordata_no_llm(
                     }
                 ],
             }
-            return Response(json.dumps(payload), status=200, content_type="application/json")
+            return Response(
+                json.dumps(payload), status=200, content_type="application/json"
+            )
 
         # Universal payload includes "type"
         if "type" in form:
             long_html = "<html><body>" + ("Hello " * 60) + "</body></html>"
             payload = {"code": 200, "html": long_html}
-            return Response(json.dumps(payload), status=200, content_type="application/json")
+            return Response(
+                json.dumps(payload), status=200, content_type="application/json"
+            )
 
         return Response(
             json.dumps({"code": 400, "msg": "Bad request"}),
@@ -76,4 +80,3 @@ def test_web_qa_agent_runs_with_mocked_thordata_no_llm(
     assert result.returncode == 0, (result.stdout or "") + "\n" + (result.stderr or "")
     out = (result.stdout or "").lower()
     assert "skipping llm" in out
-

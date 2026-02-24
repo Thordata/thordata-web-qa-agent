@@ -121,8 +121,7 @@ def summarize_with_llm(
     if backend_norm == "openai":
         if not openai_api_key:
             return (
-                "OPENAI_API_KEY is missing. "
-                "Set it in your environment or .env file."
+                "OPENAI_API_KEY is missing. " "Set it in your environment or .env file."
             )
         return _summarize_with_openai_client(
             question=question,
@@ -159,4 +158,3 @@ def summarize_with_openai(
 
 
 __all__ = ["summarize_with_llm", "summarize_with_openai"]
-

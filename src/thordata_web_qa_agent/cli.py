@@ -40,7 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Search engine (default: google).",
     )
     p.add_argument("--country", type=str, default=None, help="Country code (e.g. us).")
-    p.add_argument("--language", type=str, default=None, help="Language code (e.g. en).")
+    p.add_argument(
+        "--language", type=str, default=None, help="Language code (e.g. en)."
+    )
     p.add_argument(
         "--location",
         type=str,
@@ -175,4 +177,3 @@ def main(argv: list[str] | None = None) -> None:
 
 
 __all__ = ["main", "build_parser"]
-

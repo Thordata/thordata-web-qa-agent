@@ -22,4 +22,3 @@ def test_summarize_with_llm_no_keys_returns_message() -> None:
         openrouter_api_key=None,
     )
     assert "No LLM credentials configured" in out
-
