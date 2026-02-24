@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thordata-web-qa-agent"
+version = "0.2.0"
+description = "Minimal Web Q&A CLI using Thordata SERP + Universal Scrape (+ optional OpenAI summarization)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Thordata Developer Team", email = "support@thordata.com"}]
+keywords = ["thordata", "serp", "web-scraping", "qa", "cli"]
+
+dependencies = [
+  "thordata-sdk>=1.8.4",
+]
+
+[project.optional-dependencies]
+llm = ["openai>=1.0.0"]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-httpserver>=1.1.0",
+  "ruff>=0.1.0",
+]
+
+[project.scripts]
+thordata-web-qa = "thordata_web_qa_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]
+
